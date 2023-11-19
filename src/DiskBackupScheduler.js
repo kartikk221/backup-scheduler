@@ -8,7 +8,7 @@ const BackupScheduler = require('./BackupScheduler');
  * @typedef {Object} DiskBackupSchedulerOptions
  * @property {string} path The path to the directory where backups will be stored.
  * @property {function():string} name This method is used to generate the name for each backup. You should always return a unique name for each backup to prevent overwriting backups.
- * @property {function(string):Buffer|stream.Readable|void|Promise<void>} prepare This method is used to prepare the content for a new backup.
+ * @property {function(string):void|Promise<void>|Buffer|stream.Readable} prepare This method is used to prepare the content for a new backup.
  * - EITHER return a `Buffer` or `Readable` stream containing the content which will be backed up by this scheduler.
  * - OR create the backup file at the provided `path` and return a `Promise` which resolves once the backup file has been created.
  */
@@ -20,7 +20,7 @@ class DiskBackupScheduler extends BackupScheduler {
     prepare;
 
     /**
-     * Creates a File-Syste / Disk storage based BackupScheduler instance.
+     * Creates a File-System / Disk storage based BackupScheduler instance.
      * - **Note**: This scheduler treats ALL files in the specified directory as backups. It is recommended to ONLY use a dedicated directory for backups.
      * @param {DiskBackupSchedulerOptions & BackupScheduler.BackupSchedulerOptions} options
      */
