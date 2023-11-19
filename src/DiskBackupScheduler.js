@@ -9,8 +9,8 @@ const BackupScheduler = require('./BackupScheduler');
  * @property {string} path The path to the directory where backups will be stored.
  * @property {function():string} name This method is used to generate the name for each backup. You should always return a unique name for each backup to prevent overwriting backups.
  * @property {function(string):Buffer|stream.Readable|void|Promise<void>} prepare This method is used to prepare the content for a new backup.
- * - Either return a `Buffer` or `Readable` stream containing the content which will be backed up by this scheduler.
- * - Or create the backup file at the provided path **yourself** and return a `Promise` which resolves once the backup file has been created.
+ * - EITHER return a `Buffer` or `Readable` stream containing the content which will be backed up by this scheduler.
+ * - OR create the backup file at the provided `path` and return a `Promise` which resolves once the backup file has been created.
  */
 
 // Define a backup scheduler class to handle the backup process with disk storage
@@ -20,7 +20,8 @@ class DiskBackupScheduler extends BackupScheduler {
     prepare;
 
     /**
-     * Creates a Disk backed BackupScheduler instance.
+     * Creates a File-Syste / Disk storage based BackupScheduler instance.
+     * - **Note**: This scheduler treats ALL files in the specified directory as backups. It is recommended to ONLY use a dedicated directory for backups.
      * @param {DiskBackupSchedulerOptions & BackupScheduler.BackupSchedulerOptions} options
      */
     constructor(options) {
@@ -80,16 +81,20 @@ class DiskBackupScheduler extends BackupScheduler {
      * Lists all backups in the directory at the specified path.
      * - This method is used by the `BackupScheduler` to list all backups in the filesystem directory.
      * - **Note**: You may override this method to provide your own implementation.
-     * @returns {Promise<Backup[]>}
+     * @param {number} limit
+     * @returns {Promise<false|Backup[]>}
      */
-    async list() {
+    async list(limit) {
         // Retrieve all files in the directory along with their stats
         const files = await FileSystem.promises.readdir(this.path, { recursive: false, withFileTypes: true });
+
+        // If the number of files is less than the limit, return false to exit early for performance
+        if (files.length < limit) return false;
 
         // Parse the files into Backup instances
         const backups = [];
         for (const file of files) {
-            // Skip if this is not a file
+            // Skip all non files
             if (!file.isFile()) continue;
 
             // Retrieve the stats for this file
@@ -108,7 +113,7 @@ class DiskBackupScheduler extends BackupScheduler {
      * Creates a new backup and uploads it to the upstream storage.
      * - This method is used by the `BackupScheduler` to create a new backup and upload it to the filesystem directory.
      * - **Note**: You may override this method to provide your own implementation.
-     * @returns {Promise<Backup>}
+     * @returns {Promise<void>}
      */
     async create() {
         // Generate the file name for this backup
@@ -129,9 +134,6 @@ class DiskBackupScheduler extends BackupScheduler {
             // If the preparable is a buffer, write it to the file and wait for it to finish
             await FileSystem.promises.writeFile(path, preparable);
         }
-
-        // Return the backup instance representing this backup
-        return new Backup(name, Date.now());
     }
 
     /**
@@ -144,7 +146,7 @@ class DiskBackupScheduler extends BackupScheduler {
     async delete(backups) {
         // Delete the backups concurrently
         const promises = [];
-        for (const backup of backups) promises.push(FileSystem.promises.unlink(`${this.path}/${backup.name}`));
+        for (const backup of backups) promises.push(FileSystem.promises.unlink(`${this.path}/${backup.id}`));
         await Promise.all(promises);
     }
 }

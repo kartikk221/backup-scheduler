@@ -4,14 +4,16 @@ const EventEmitter = require('events');
 /**
  * @typedef {Object} BackupSchedulerOptions
  * @property {number} interval The interval (in milliseconds) between creating each backup.
- * @property {number} limit The maximum number of backups allowed in the upstream storage. Oldest backups will be deleted to make room for new backups.
+ * @property {number} limit The total number of backups to keep in the upstream storage.
  */
 
 /**
  * @typedef {Object} BackupSchedulerRequiredMethods
- * @property {function():Backup[]|Promise<Backup[]>} list This method should return a list of all backups in the upstream storage.
- * @property {function():Backup|Promise<Backup>} create This method should create a new backup and upload it to the upstream storage, then retuern a Backup instance.
- * @property {function(Backup[]):void|Promise<void>} delete This method should delete the specified backups from the upstream storage.
+ * @property {function(number):Backup[]|Promise<false|Backup[]>} list This method **must** return a list of all backups in the upstream storage.
+ * - This method provides the `limit` as the first argument to allow you to return `false` if it can be confirmed that the upstream has not exceeded the `limit` yet based on size.
+ * - This should only be used as an optimization to prevent unnecessary API calls to the upstream storage for additional information about each backup if we are sure there aren't enough backups to exceed the `limit`.
+ * @property {function():void|Promise<void>} create This method **must** create a new backup and upload it to the upstream storage.
+ * @property {function(Backup[]):void|Promise<void>} delete This method **must** delete the specified backups from the upstream storage.
  */
 
 // Define a backup scheduler class to handle the backup process
@@ -89,30 +91,35 @@ class BackupScheduler extends EventEmitter {
         // Safely perform the backup cycle
         let success = false;
         try {
-            // List the current backups in the upstream storage
+            // List the current backups
+            // If the list function returns false, we can safely assume the limit has not been exceeded yet
             const list = await this.options.list();
-            if (!Array.isArray(list) || list.find((backup) => !(backup instanceof Backup)))
-                throw new Error('BackupScheduler -> The "list" function must return an Array of "Backup" instances.');
+            if (list === false) {
+                // Create a new backup and don't worry about deleting any backups
+                await this.options.create();
+            } else {
+                // Ensure the returned list is an Array of Backup instances
+                if (!Array.isArray(list) || list.find((backup) => !(backup instanceof Backup)))
+                    throw new Error(
+                        'BackupScheduler -> The "list" function must return an Array of "Backup" instances.'
+                    );
 
-            // Shallow copy and sort the backups by increasing creation date to ensure the oldest backups can be deleted first
-            const sorted = [...list].sort((a, b) => a.created_at - b.created_at);
+                // Shallow copy and sort the backups in oldest to newest order
+                const sorted = [...list].sort((a, b) => a.created_at - b.created_at);
 
-            // Create a new backup
-            const backup = await this.options.create();
-            if (!(backup instanceof Backup))
-                throw new Error('BackupScheduler -> The "create" function must create and return a "Backup" instance.');
+                // Create a new backup
+                await this.options.create();
 
-            // Check if the backup limit has been exceeded
-            const overflow = sorted.length - this.options.limit + 1;
-            if (overflow > 0) {
-                // Slice the oldest backups which are over the limit
-                const sliced = sorted.slice(0, overflow);
-
-                // Delete the oldest backups
-                await this.options.delete(sliced);
+                // Check if the backup limit has been exceeded and if so by how many
+                const overflow = sorted.length - this.options.limit + 1;
+                if (overflow > 0) {
+                    // Slice the oldest backups which are over the limit and delete them
+                    const sliced = sorted.slice(0, overflow);
+                    await this.options.delete(sliced);
+                }
             }
 
-            // Set the success flag
+            // Mark the backup cycle as successful
             success = true;
         } catch (error) {
             // Emit the error event
