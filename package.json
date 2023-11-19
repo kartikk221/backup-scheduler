@@ -1,0 +1,12 @@
+{
+  "name": "backup-scheduler",
+  "version": "1.0.0",
+  "description": "An unopinionated backup creation library to easily create and manage automated backups of any resource to any upstream.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
